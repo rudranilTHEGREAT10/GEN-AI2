@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Creative Writing Assistant</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts - Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <!-- React CDN -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <!-- ReactDOM CDN -->
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <!-- Babel CDN for JSX transformation in browser (for development/simple examples) -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <style>
+        /* Custom styles for the Inter font */
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        // Main App component for the AI Creative Writing Assistant
+        const App = () => {
+            // State to store the user's input prompt
+            const [prompt, setPrompt] = React.useState('');
+            // State to store the AI-generated text
+            const [generatedText, setGeneratedText] = React.useState('');
+            // State to manage the loading status during main API calls (generate content)
+            const [isLoading, setIsLoading] = React.useState(false);
+            // State to manage loading for the summarize feature
+            const [isSummarizing, setIsSummarizing] = React.useState(false);
+            // State to manage loading for the continue writing feature
+            const [isContinuing, setIsContinuing] = React.useState(false);
+            // State to store any error messages
+            const [error, setError] = React.useState('');
+            // State to store the summarized text
+            const [summarizedText, setSummarizedText] = React.useState('');
+            // State to store the continued text
+            const [continuedText, setContinuedText] = React.useState('');
+
+            /**
+             * Handles the change event for the prompt input field.
+             * @param {Object} e - The event object from the input field.
+             */
+            const handlePromptChange = (e) => {
+                setPrompt(e.target.value);
+                setError(''); // Clear any previous errors when the user types
+                setSummarizedText(''); // Clear summary if prompt changes
+                setContinuedText(''); // Clear continuation if prompt changes
+            };
+
+            /**
+             * Generic function to call the Gemini API.
+             * @param {string} userPrompt - The prompt to send to the LLM.
+             * @param {function} setLoadingState - Function to set the loading state (e.g., setIsLoading, setIsSummarizing).
+             * @param {function} setOutputState - Function to set the output state (e.g., setGeneratedText, setSummarizedText).
+             * @returns {Promise<void>}
+             */
+            const callGeminiAPI = async (userPrompt, setLoadingState, setOutputState) => {
+                setLoadingState(true);
+                setError('');
+                setOutputState(''); // Clear previous output for this specific action
+
+                try {
+                    let chatHistory = [];
+                    chatHistory.push({ role: "user", parts: [{ text: userPrompt }] });
+
+                    const payload = { contents: chatHistory };
+                    // IMPORTANT: In a real deployment, you would handle API keys securely.
+                    // For this Canvas environment, __app_id and __firebase_config are provided.
+                    // The API key for Gemini API is handled by the Canvas runtime if left empty for gemini-2.0-flash.
+                    const apiKey = "";
+                    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (!response.ok) {
+                        const errorData = await response.json();
+                        throw new Error(`API error: ${errorData.error.message || response.statusText}`);
+                    }
+
+                    const result = await response.json();
+
+                    if (result.candidates && result.candidates.length > 0 &&
+                        result.candidates[0].content && result.candidates[0].content.parts &&
+                        result.candidates[0].content.parts.length > 0) {
+                        const text = result.candidates[0].content.parts[0].text;
+                        setOutputState(text);
+                    } else {
+                        setError('No content generated. Please try a different prompt or action.');
+                    }
+                } catch (err) {
+                    console.error('Error during API call:', err);
+                    setError(`Failed to process request: ${err.message}`);
+                } finally {
+                    setLoadingState(false);
+                }
+            };
+
+            /**
+             * Calls the Gemini API to generate creative text based on the user's prompt.
+             */
+            const generateContent = async () => {
+                if (!prompt.trim()) {
+                    setError('Please enter a prompt to generate content.');
+                    return;
+                }
+                setSummarizedText(''); // Clear summary when new content is generated
+                setContinuedText(''); // Clear continuation when new content is generated
+                await callGeminiAPI(prompt, setIsLoading, setGeneratedText);
+            };
+
+            /**
+             * Summarizes the currently generated text using the Gemini API.
+             */
+            const summarizeText = async () => {
+                if (!generatedText.trim()) {
+                    setError('Please generate some text first to summarize.');
+                    return;
+                }
+                setContinuedText(''); // Clear continuation when summarizing
+                const summaryPrompt = `Summarize the following text concisely:\n\n${generatedText}`;
+                await callGeminiAPI(summaryPrompt, setIsSummarizing, setSummarizedText);
+            };
+
+            /**
+             * Continues writing based on the currently generated text using the Gemini API.
+             */
+            const continueWriting = async () => {
+                if (!generatedText.trim()) {
+                    setError('Please generate some text first to continue writing.');
+                    return;
+                }
+                setSummarizedText(''); // Clear summary when continuing
+                const continuePrompt = `Continue the following text, expanding on the ideas presented:\n\n${generatedText}`;
+                await callGeminiAPI(continuePrompt, setIsContinuing, setContinuedText);
+            };
+
+            return (
+                // Main container with responsive padding and background
+                <div className="min-h-screen bg-gradient-to-br from-purple-50 to-indigo-100 flex flex-col items-center justify-center p-4 sm:p-6 lg:p-8 font-inter">
+                    {/* Card-like container for the AI tool */}
+                    <div className="bg-white p-6 sm:p-8 rounded-2xl shadow-xl w-full max-w-2xl border border-gray-200">
+                        {/* Title of the application */}
+                        <h1 className="text-3xl sm:text-4xl font-extrabold text-center text-gray-800 mb-6">
+                            <span className="bg-clip-text text-transparent bg-gradient-to-r from-purple-600 to-indigo-600">
+                                AI Creative Writing Assistant
+                            </span>
+                        </h1>
+
+                        {/* Description for the user */}
+                        <p className="text-center text-gray-600 mb-8 text-base sm:text-lg">
+                            Enter a prompt below and let our AI help you spark your creativity!
+                        </p>
+
+                        {/* Input area for the user's prompt */}
+                        <div className="mb-6">
+                            <textarea
+                                className="w-full p-4 rounded-lg border-2 border-gray-300 focus:border-indigo-500 focus:ring-indigo-500 focus:outline-none transition duration-200 text-gray-800 resize-y min-h-[120px] shadow-sm"
+                                placeholder="e.g., 'Write a short story about a robot who discovers a love for gardening.'"
+                                value={prompt}
+                                onChange={handlePromptChange}
+                                rows="5"
+                            ></textarea>
+                        </div>
+
+                        {/* Error message display */}
+                        {error && (
+                            <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg relative mb-6" role="alert">
+                                <strong className="font-bold">Error!</strong>
+                                <span className="block sm:inline ml-2">{error}</span>
+                            </div>
+                        )}
+
+                        {/* Button to trigger content generation */}
+                        <button
+                            onClick={generateContent}
+                            disabled={isLoading || isSummarizing || isContinuing} // Disable all buttons when any action is loading
+                            className={`w-full py-3 px-6 rounded-xl text-lg font-semibold text-white transition duration-300 ease-in-out transform shadow-lg
+                                ${isLoading
+                                    ? 'bg-gray-400 cursor-not-allowed'
+                                    : 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 hover:scale-105'
+                                }`}
+                        >
+                            {isLoading ? (
+                                <div className="flex items-center justify-center">
+                                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                    Generating...
+                                </div>
+                            ) : (
+                                'Generate Content'
+                            )}
+                        </button>
+
+                        {/* Display area for the generated text */}
+                        {generatedText && (
+                            <div className="mt-8 bg-indigo-50 p-6 rounded-xl border border-indigo-200 shadow-md">
+                                <h2 className="text-xl sm:text-2xl font-bold text-indigo-800 mb-4">Generated Content:</h2>
+                                <p className="text-gray-700 whitespace-pre-wrap leading-relaxed">
+                                    {generatedText}
+                                </p>
+
+                                {/* Action buttons for generated text */}
+                                <div className="flex flex-col sm:flex-row justify-center gap-4 mt-6">
+                                    <button
+                                        onClick={summarizeText}
+                                        disabled={isLoading || isSummarizing || isContinuing}
+                                        className={`flex-1 py-2 px-4 rounded-xl text-md font-semibold text-white transition duration-300 ease-in-out transform shadow-md
+                                            ${isSummarizing
+                                                ? 'bg-gray-400 cursor-not-allowed'
+                                                : 'bg-gradient-to-r from-green-500 to-teal-600 hover:from-green-600 hover:to-teal-700 hover:scale-105'
+                                            }`}
+                                    >
+                                        {isSummarizing ? (
+                                            <div className="flex items-center justify-center">
+                                                <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                                </svg>
+                                                Summarizing...
+                                            </div>
+                                        ) : (
+                                            '✨ Summarize Text'
+                                        )}
+                                    </button>
+                                    <button
+                                        onClick={continueWriting}
+                                        disabled={isLoading || isSummarizing || isContinuing}
+                                        className={`flex-1 py-2 px-4 rounded-xl text-md font-semibold text-white transition duration-300 ease-in-out transform shadow-md
+                                            ${isContinuing
+                                                ? 'bg-gray-400 cursor-not-allowed'
+                                                : 'bg-gradient-to-r from-blue-500 to-cyan-600 hover:from-blue-600 hover:to-cyan-700 hover:scale-105'
+                                            }`}
+                                    >
+                                        {isContinuing ? (
+                                            <div className="flex items-center justify-center">
+                                                <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                                </svg>
+                                                Continuing...
+                                            </div>
+                                        ) : (
+                                            '✨ Continue Writing'
+                                        )}
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Display area for the summarized text */}
+                        {summarizedText && (
+                            <div className="mt-8 bg-green-50 p-6 rounded-xl border border-green-200 shadow-md">
+                                <h2 className="text-xl sm:text-2xl font-bold text-green-800 mb-4">Summarized Content:</h2>
+                                <p className="text-gray-700 whitespace-pre-wrap leading-relaxed">
+                                    {summarizedText}
+                                </p>
+                            </div>
+                        )}
+
+                        {/* Display area for the continued text */}
+                        {continuedText && (
+                            <div className="mt-8 bg-blue-50 p-6 rounded-xl border border-blue-200 shadow-md">
+                                <h2 className="text-xl sm:text-2xl font-bold text-blue-800 mb-4">Continued Content:</h2>
+                                <p className="text-gray-700 whitespace-pre-wrap leading-relaxed">
+                                    {continuedText}
+                                </p>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        // Render the App component into the 'root' div
+        ReactDOM.render(<App />, document.getElementById('root'));
+    </script>
+</body>
+</html>
